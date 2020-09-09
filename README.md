@@ -21,3 +21,6 @@ Is a class for performing ML regression training
 
 # AJ_agent
 Is a class to perform reinforcement learning
+
+# param_search.py
+Is a script to generate a file needed by the hyperparameter search in the AJ_models classes

@@ -30,11 +30,18 @@ class FFT_transform:
 
     def trasformata(self):
         """
-        perform the FFT of the signal
+        perform the FFT of the signal and return the positive part of the signal and the total signal
 
-        :return: X[len(x)/2], Y[len(x)/2]
+        :return: X[len(x)/2], Y[len(x)/2], X[len(x)], Y[len(x)]
         """
         fft_y_proto = scipy.fftpack.fft(self.y)
+
+        fft_y_tot = np.zeros(round(self.n))
+        for i in range(round(self.n/2)):
+            fft_y_tot[i+round(self.n/2)] = fft_y_proto[i]
+        for i in range(round(self.n/2), round(self.n)):
+            fft_y_tot[i-round(self.n/2)] = fft_y_proto[i]
+
         fft_y = np.zeros(round(self.n/2))
         for i in range(round(self.n/2)):
             fft_y[i] = fft_y_proto[i]
@@ -42,8 +49,10 @@ class FFT_transform:
         fft_y = np.abs(fft_y)
         T = self.x[1] - self.x[0]
         fft_x = np.linspace(0, 1/(2*T), round(self.n/2))
+        fft_x_proto = np.linspace(-1/(2*T), 1/(2*T), len(fft_y_proto))
 
-        return fft_x, fft_y
+
+        return fft_x, fft_y, fft_x_proto, np.abs(fft_y_tot)
 
     def power_spectral_density(self, metodo = 1, bin = 1024):
         """

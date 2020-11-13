@@ -1,3 +1,9 @@
+import sys
+sys.path.insert(0, 'C:/Users/Max Power/OneDrive/ponte/programmi/python/progetto2/AJ_lib')
+sys.path.insert(0, 'C:/Users/ajacassi/OneDrive/ponte/programmi/python/progetto2/AJ_lib')
+from AJ_draw import disegna as ds
+import matplotlib.pyplot as plt
+
 import pandas as pd
 import numpy as np
 import json
@@ -146,7 +152,7 @@ class learning_reg:
             model = VARMAX(data, exog=exog_data, order=order)
         return model
 
-    def get_deep_learning_model(self, input_dl, output_dl = 1, active = 'linear', lost = 'mse', net_type = 'normal'):
+    def get_deep_learning_model(self, input_dl, output_dl = 1, active = 'linear', lost = 'mae', net_type = 'normal'):
         ''' generate the deep learning model'''
         # model = keras.Sequential()
         # act = 'relu'
@@ -164,7 +170,7 @@ class learning_reg:
             model.add(keras.layers.Dense(64, activation='relu'))
             model.add(keras.layers.Dense(32, activation='relu'))
             model.add(keras.layers.Dense(output_dl, activation='relu'))
-            model.compile(loss='mae', optimizer = 'adam', metrics = ['accuracy'])
+            model.compile(loss=lost, optimizer = 'adam', metrics = ['accuracy'])
 
         if net_type == 'vgg':
             def vgg_block(layer_in, n_filters, n_conv):
@@ -184,7 +190,7 @@ class learning_reg:
             hidden1 = keras.layers.Dropout(0.4)(hidden1)
             output = keras.layers.Dense(output_dl, activation = 'relu')(hidden1)
             model = keras.models.Model(inputs = visible, outputs = output)
-            model.compile(optimizer = 'adam', loss = 'mae', metrics=['accuracy'])
+            model.compile(optimizer = 'adam', loss = lost, metrics=['accuracy'])
         return model
 
 
@@ -288,7 +294,10 @@ class learning_reg:
         return models
 
     def train_rolling_window(self, models, X_tot, Y_tot, frame_perc, epochs = 1, validation = False):
-        '''train with rolling window, the function can be expanded to use the validation for checking purposes
+        '''train with rolling window, the function can be expanded to use the validation for checking purposes.
+            This is not a real rolling, it train the dataset a frame at a time, but it doesn't use the window to move
+            across time, it works if time is along the column like in the case of time and other features. If you have time only this isn't the
+            right one.
         :param models: dictionary with as index the name of the models, as elements the models
         :param X_tot: matrix with the features, pandas or numpy
         :param Y_tot: array with the targets, pandas or numpy
@@ -316,6 +325,40 @@ class learning_reg:
             x_frame = X_tot[last_step:]
             y_frame = Y_tot[last_step:]
             models, _ = self.train_models(models, x_frame, y_frame, epochs = epochs, validation_data = None, shuffle = False)
+        return models
+
+    def train_rolling_window2(self, models, x_train, y_train, rol_frame, epochs = 1):
+        '''train with rolling window. This is the real rolling. It takes as imput the time line and gives as autput a time line. It rolls on the time line a window with
+        a rol_frame size and it include the data used as Y to the X while it is rolling.
+        :param models: dictionary with as index the name of the models, as elements the models
+        :param x_train: matrix of time lines, pandas or numpy, the time line has to lie on the shape[1]
+        :param y_train: matrix of time lines representing the next section of the x_train, pandas or numpy, the time line has to lie on the shape[1]
+        :param rol_frame: int, size of the window to roll
+        :param epochs: epochs used if deep learning is in the models
+        '''
+
+        print()
+        frame_size = x_train.shape[1]
+        print('X frame size', frame_size)
+        test_frame = y_train.shape[1]
+        print('Y frame size', test_frame)
+        print()
+
+        step_size = int(test_frame/rol_frame)
+        last_step = test_frame - step_size*rol_frame
+
+        for step in range(step_size):
+            start_frame = step*rol_frame
+            end_frame = start_frame + frame_size
+            x_frame = x_train.iloc[:,start_frame:end_frame]
+            y_frame = y_train.iloc[:,step*rol_frame:step*rol_frame + rol_frame]
+            models, _ = self.train_models(models, x_frame, y_frame, epochs = epochs)
+            x_train = pd.concat([x_train.iloc[:,:], y_frame], axis = 1)
+
+        if last_step != 0:
+            x_frame = x_train.iloc[:,-frame_size:]
+            y_frame = y_train.iloc[:,-rol_frame:]
+            models, _ = self.train_models(models, x_frame, y_frame, epochs = epochs)
         return models
 
     def train_negative_binomial_model(self, x_train, y_train, test_size):
@@ -455,7 +498,38 @@ class learning_reg:
             history = pd.concat([history, pred], ignore_index = True)
         return final_pred
 
+    def predict_rolling_window2(self, models, x_test, predict_frame, rol_frame):
+        print()
+        frame_size = x_test.shape[1]
+        print('X frame size', frame_size)
+        print()
 
+        x_test.columns = [i for i in range(len(x_test.columns.tolist()))]
+
+        step_size = int(predict_frame/rol_frame)
+        last_step = predict_frame - step_size*rol_frame
+
+        for i, (name_model, model) in enumerate(models.items()):
+
+            for step in range(step_size):
+                start_frame = step*rol_frame
+                end_frame = start_frame + frame_size
+                x_frame = x_test.iloc[:,start_frame:end_frame]
+                predict_matrix = model.predict(x_frame)
+                predict_matrix = pd.DataFrame(predict_matrix)
+                predict_matrix.index = x_frame.index
+                predict_matrix.columns = [i+x_frame.columns.tolist()[-1]+1 for i in range(rol_frame)]
+                x_test = pd.concat([x_test.iloc[:,:], predict_matrix], axis = 1)
+
+            if last_step != 0:
+                x_frame = x_test.iloc[:,-frame_size:]
+                predict_matrix = model.predict(x_frame)
+                predict_matrix = pd.DataFrame(predict_matrix)
+                predict_matrix.index = x_frame.index
+                predict_matrix.columns = [i+x_frame.columns.tolist()[-1]+1 for i in range(rol_frame)]
+                x_test = pd.concat([x_test.iloc[:,:], predict_matrix], axis = 1)
+
+        return x_test.iloc[:,-predict_frame:]
 
         # ███████  ██████  ██████  ██████  ███████
         # ██      ██      ██    ██ ██   ██ ██
@@ -531,3 +605,53 @@ class learning_reg:
         df_score = df_score.T
         df_score.columns = ['MAE', 'MSE', 'R2', 'R2 a mano', 'residual']
         return df_score
+
+
+    def plot_history(self, fitModel, type = 'dnn'):
+        if fitModel != 0 and type == 'dnn':
+            history_dict = fitModel.history
+            history_dict.keys()
+            loss = history_dict['loss']
+            val_loss = history_dict['val_loss']
+
+            acc = history_dict['acc']
+            val_acc = history_dict['val_acc']
+            epochs = range(1, len(loss) + 1)
+
+            ds().nuova_fig(1, indice_subplot=211)
+            ds().titoli(titolo="Training loss", xtag='Epochs', ytag='Loss', griglia=0)
+            ds().dati(epochs, loss, descrizione = 'Training loss', colore='red')
+            ds().dati(epochs, val_loss, descrizione = 'Validation loss')
+            ds().dati(epochs, loss, colore='red', scat_plot ='scat', larghezza_riga =10)
+            ds().dati(epochs, val_loss, scat_plot ='scat', larghezza_riga =10)
+            ds().range_plot(bottomY =np.array(val_loss).mean()-np.array(val_loss).std()*6, topY = np.array(val_loss).mean()+np.array(val_loss).std()*6)
+            ds().legenda()
+            ds().nuova_fig(1,indice_subplot=212)
+            ds().titoli(titolo="Training loss", xtag='Epochs', ytag='Accuracy', griglia=0)
+            ds().dati(epochs, acc, descrizione = 'Training loss', colore='red')
+            ds().dati(epochs, val_acc, descrizione = 'Validation loss')
+            ds().dati(epochs, acc, colore='red', scat_plot ='scat', larghezza_riga =10)
+            ds().dati(epochs, val_acc, scat_plot ='scat', larghezza_riga =10)
+            ds().range_plot(bottomY =np.array(val_acc).mean()-np.array(val_acc).std()*6, topY = np.array(val_acc).mean()+np.array(val_acc).std()*6)
+            ds().legenda()
+
+            plt.show()
+        elif fitModel !=0 and type == 'xgb':
+            epochs = len(fitModel['validation_0']['error'])
+            x_axis = range(0, epochs)
+            # plot log loss
+            fig, ax = plt.subplots()
+            ax.plot(x_axis, fitModel['validation_0']['logloss'], label='Train')
+            ax.plot(x_axis, fitModel['validation_1']['logloss'], label='Test')
+            ax.legend()
+            plt.ylabel('Log Loss')
+            plt.title('XGBoost Log Loss')
+            plt.show()
+            # plot classification error
+            fig, ax = plt.subplots()
+            ax.plot(x_axis, fitModel['validation_0']['error'], label='Train')
+            ax.plot(x_axis, fitModel['validation_1']['error'], label='Test')
+            ax.legend()
+            plt.ylabel('Classification Error')
+            plt.title('XGBoost Classification Error')
+            plt.show()

@@ -10,7 +10,7 @@ import numpy as np
 import seaborn as sns
 import json
 
-from tensorflow import keras
+from tensorflow import keras #funziona con tensorflow-gpu==1.14.0
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import RandomizedSearchCV, GridSearchCV

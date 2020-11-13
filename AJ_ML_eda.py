@@ -16,6 +16,12 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_selection import RFE, SelectFromModel
 from sklearn.base import clone
 from sklearn.metrics import mean_absolute_error, accuracy_score
+from collections import defaultdict
+
+from wordcloud import STOPWORDS
+import string
+
+from itertools import permutations
 
 from xgboost import XGBRegressor
 import pickle
@@ -78,17 +84,30 @@ class learning:
         subset_data = self.data.sample(frac = frazione, random_state = 1)
         return subset_data
 
-    def convertIntoNumbers(self, df, columns):
-        df[columns]=LabelEncoder().fit_transform(df[columns])
+    def convertIntoNumbers(self, df, columns, dictionary = 'no'):
+        '''
+        trasforma il vettore di elementi in un vettore di numeri con l'aggiunta di un dizionario per tornare in dietro
+        siccome viene fatto un fit tramite una funzione, una volta creato l'encoding il fit puo essere usato per trasformare un nuvo vettore usando lo stesso dizionario
+        '''
+        if dictionary == 'no':
+            df[columns]=LabelEncoder().fit_transform(df[columns])
+            return df
+        else:
         # in forma piu esplicita
-        # label_encoder = LabelEncoder()
-        # label_encoder = label_encoder.fit(df[columns])
-        # df[columns] = label_encoder.transform(df[columns])
-        # dict_class = dict(zip(label_encoder.classes_, range(len(label_encoder.classes_))))
-        return df
+            label_encoder = LabelEncoder()
+            label_encoder = label_encoder.fit(df[columns])
+            df[columns] = label_encoder.transform(df[columns])
+            dict_class = dict(zip(label_encoder.classes_, range(len(label_encoder.classes_))))
+            return df, dict_class
 
     def createDummy(self, column):
-        matchTypeDummies = pd.get_dummies(self.data[column],drop_first=True)
+        '''
+        partendo da una colonna di elementi, crea una matrice con le dummies variables dove ogni matrice rappresenta uno degli elemnti originali
+        La matrice che viene creata puo essere considerata una onehot encoding
+        funziona con ogni tipo di elemento (numeri, char, etc.)
+        credi funzioni solo sulle matrici e non sui vettori
+        '''
+        matchTypeDummies = pd.get_dummies(self.data[column],drop_first=False)
         data_w_dummies = pd.concat([self.data,matchTypeDummies],axis=1)
         return data_w_dummies
 
@@ -97,11 +116,40 @@ class learning:
         take a vector of valuse [1,0,2] and gives the one hot encoding of that vector
         works only with numbers
         n_values is the number of values in the vector, es -> [0,4,2] = 5 ... because the range is from 0 to 4
-        '''
 
+        funziona come 'createDummy' ma sui vettori di soli numeri, potenzialmente piu veloce su grandi matrici (forse)
+        '''
         onehot_vector = np.zeros([len(vector), n_values])
         onehot_vector[np.arange(len(vector)), vector] = 1
         return onehot_vector
+
+    def reverse_onehot_encoding(self, df, cols):
+        '''
+        df is the dataframe with the onehot encoding, i valori nelle colonne deveno essere INT
+        cols are the columns from the df that we want to reverse the encoding
+        in some cases you may have columns with labels or names, and you don't want to reverse those, that's why you have to select the columns where perform the operations
+        '''
+        label_encoder = LabelEncoder()
+        label_encoder = label_encoder.fit(cols)
+        dict_class = dict(zip(label_encoder.classes_, range(len(label_encoder.classes_))))
+        for col in cols:
+            df[col] = df[col]*(dict_class[col]+1)
+        df['rev_one_hot'] = df[cols].sum(axis=1)
+        df.drop(cols,axis = 1, inplace = True)
+        df['rev_one_hot_names'] = label_encoder.inverse_transform(df['rev_one_hot']-1)
+        return df
+
+    def reverse_onehot_encoding_2(self, df, cols):
+        '''
+        df is the dataframe with onehot encoding, i valori nelle colonne possono essere anche float
+        cols are the columns from the df that we want to reverse the encoding
+        the method finds the maximum in each row and set the index of the column as elemnt of that row
+        '''
+        df_rev = pd.DataFrame(df[cols].idxmax(axis=1), columns=['rev_one_hot_names'])
+        label_encoder = LabelEncoder()
+        label_encoder = label_encoder.fit(df_rev['rev_one_hot_names'])
+        df_rev['rev_one_hot'] = label_encoder.transform(df_rev['rev_one_hot_names'])
+        return df_rev
 
     def removingObj(self, obj = [np.inf, -np.inf]):
         clean_data = self.data.replace(obj, np.nan)
@@ -123,6 +171,162 @@ class learning:
         y = self.data[[col_y]]
         X_train, X_test, y_train, y_test = train_test_split(x,y,test_size=test_size)
         return X_train, X_test, y_train, y_test, x, y
+
+
+        # ██       █████  ███    ██  ██████  ██    ██  █████   ██████  ███████     ██████  ██████   ██████   ██████ ███████ ███████ ███████
+        # ██      ██   ██ ████   ██ ██       ██    ██ ██   ██ ██       ██          ██   ██ ██   ██ ██    ██ ██      ██      ██      ██
+        # ██      ███████ ██ ██  ██ ██   ███ ██    ██ ███████ ██   ███ █████       ██████  ██████  ██    ██ ██      █████   ███████ ███████
+        # ██      ██   ██ ██  ██ ██ ██    ██ ██    ██ ██   ██ ██    ██ ██          ██      ██   ██ ██    ██ ██      ██           ██      ██
+        # ███████ ██   ██ ██   ████  ██████   ██████  ██   ██  ██████  ███████     ██      ██   ██  ██████   ██████ ███████ ███████ ███████
+
+    def add_text_features(self, df_train, col):
+        # word_count
+        df_train['word_count'] = df_train[col].str.split().apply(len)
+
+        # unique_word_count
+        df_train['unique_word_count'] = df_train[col].str.split().apply(set).apply(len)
+
+        # stop_word_count, rapresenta quante parole sarebbero eliminabili perche non apportano un significato alla frase. Sono parole tabulate presenti nalla libreria wordcloud
+        def check_stop(x):
+            return len([w for w in x if w in STOPWORDS])
+        df_train['text_lower'] = df_train[col].str.lower()
+        df_train['stop_word_count'] = df_train['text_lower'].str.split().apply(check_stop)
+
+        # url_count
+        def check_http(x):
+            return len([w for w in x if 'http' in w or 'https' in w])
+        df_train['url_count'] = df_train['text_lower'].str.split().apply(check_http)
+
+        # mean_word_length
+        def check_mean_word_len(x):
+            return np.mean([len(w) for w in x])
+        df_train['mean_word_length'] = df_train[col].str.split().apply(check_mean_word_len)
+
+        # char_count
+        df_train['char_count'] = df_train[col].apply(len)
+
+        # punctuation_count
+        def check_punctuation(x):
+            return len([c for c in x if c in string.punctuation])
+        df_train['punctuation_count'] = df_train[col].apply(check_punctuation)
+
+        # hashtag_count
+        def check_hashtag(x):
+            return len([c for c in x if c == '#'])
+        df_train['hashtag_count'] = df_train[col].apply(check_hashtag)
+
+        # mention_count
+        def check_mention(x):
+            return len([c for c in x if c == '@'])
+        df_train['mention_count'] = df_train[col].apply(check_mention)
+
+        df_train.drop(['text_lower'], axis = 1, inplace = True)
+        return df_train
+
+    def generate_ngrams(self, text, n_gram):
+        '''
+            funziona solo in inglese se si usa la libreria STOPWORDS
+            Si puo sostituire con una libreria personale di escusioni
+            prende il text e lo spitta nelle sue parole eliminando tutto quello che appartiene alle STOPWORDS
+            text: stringa di testo
+            n_gram: valore dell'n_gram, 1 divide ogni parola, 2 ogni 2 parole e cosi via
+            return array con per elementi la frase spezzata nei suoi n_gram
+
+            esempio text = 'uno va al mare', n_gram = 2
+            return -> ['uno va', 'va al', 'al mare']
+        '''
+        token = [token for token in text.lower().split(' ') if token != '' if token not in STOPWORDS]
+        ngrams = zip(*[token[i:] for i in range(n_gram)])
+        return [' '.join(ngram) for ngram in ngrams]
+
+    def count_ngrams(self, df, col, n_gram):
+        '''
+        prende un dataframe e la colonna con le stringhe e dopo aver spezzato ogni stringa nei suoi n_gram
+        fa il conteggio di quante volte ogni n_gram sia presente in tutte le stringhe presenti nel vettore
+        '''
+        df_text = df[col]
+        dict_ngram = defaultdict(int)
+        def read_text(text):
+            for word in self.generate_ngrams(text, n_gram):
+                dict_ngram[word] += 1
+        df_text.apply(read_text)
+        df_dict_ngram = pd.DataFrame(dict_ngram.items()).sort_values(by=[1], ascending = False)
+        return df_dict_ngram
+
+    def vocab_count(self, df, col):
+        '''
+        prende un dataframe e la colonna cove si trovano le stringhe
+        conta quante volte viene ripetuta ogni singola parola dentro tutte le stringhe presenti nel dataframe[col]
+        restituisce un dizionario con il conteggio
+        '''
+        sentences = df[col].str.split()
+        vocab_dict = defaultdict(int)
+        def read_vocab(sentece):
+            for word in sentece:
+                vocab_dict[word] += 1
+        sentences.apply(read_vocab)
+        return vocab_dict
+
+    def check_embeddings_coverage(self, X, col, verbose = False):
+        '''
+        prende un dataframe e la colonna dove sono prenseti le stringhe e fa il conteggio delle parole prensenti
+        dopo controlla quante di queste parole si trovano in 2 dizionari
+        i dizionari devono essere presenti nella stessa cartella in cui si trova il codice
+        '''
+        #load 2 vocabularies
+        glove_embeddings = np.load('./glove.840B.300d.pkl', allow_pickle=True)
+        fasttext_embeddings = np.load('./crawl-300d-2M.pkl', allow_pickle=True)
+        dict_coverage = dict()
+        for i, embeddings in enumerate([glove_embeddings, fasttext_embeddings]):
+            vocab = self.vocab_count(X, col)
+            covered = {}
+            oov = {}
+            n_covered = 0
+            n_oov = 0
+            for word in vocab:
+                try:
+                    covered[word] = embeddings[word]
+                    n_covered += vocab[word]
+                except:
+                    oov[word] = vocab[word]
+                    n_oov += vocab[word]
+            vocab_coverage = len(covered) / len(vocab)
+            text_coverage = (n_covered / (n_covered + n_oov))
+            # sorted_oov = sorted(oov.items(), key=operator.itemgetter(1))[::-1]
+            dict_coverage[i] = [vocab_coverage, text_coverage]
+            if verbose:
+                print('dictionary {} covers {:.2%} of vocabulary and {:.2%} of text in Training Set'.format(i, vocab_coverage, text_coverage))
+        return dict_coverage[i]
+
+    def get_ngram_features(self, bases, n, data, column):
+        """Generates a dataframe with counts for each subsequence as columns.
+            Serve quando si ha un vettore di lettere come una stringa di DNA e si e' interessati a sapere quali combinazioni di lettere e' presente nella stringa
+            La funzione vuole le stringhe, le lettere che le compongono, e la lunghezza delle combinazioni. Viene generata ogni possible combinazione delle lettere
+            e viene cercata dentro ogni stringa quali delle combinazioni sono presenti.
+            Non serve su frasi vere, e' stata creata per studiare DNA sequence.
+            Lavora senza sovrapporre le combinazioni.
+        Args:
+            bases (list of char): list of letters which are present in the data[column]
+            n (int): length of the subsequence
+            data (DataFrame): The data you want to create features from. Must include a "sequence" column.
+            subsequences (list): A list of subsequences to count.
+            column (string): column where apply the ngram search
+        Returns:
+            DataFrame: A DataFrame with one column for each subsequence.
+        """
+        subsequences = [''.join(permutation) for permutation in permutations(bases, r=n)]
+        features = pd.DataFrame(index=data.index)
+        for subseq in subsequences:
+            features[subseq] = data[column].str.count(subseq)
+        return features
+
+
+        #  ██████ ██████   ██████  ███████ ███████     ██    ██  █████  ██      ██ ██████   █████  ████████ ██  ██████  ███    ██
+        # ██      ██   ██ ██    ██ ██      ██          ██    ██ ██   ██ ██      ██ ██   ██ ██   ██    ██    ██ ██    ██ ████   ██
+        # ██      ██████  ██    ██ ███████ ███████     ██    ██ ███████ ██      ██ ██   ██ ███████    ██    ██ ██    ██ ██ ██  ██
+        # ██      ██   ██ ██    ██      ██      ██      ██  ██  ██   ██ ██      ██ ██   ██ ██   ██    ██    ██ ██    ██ ██  ██ ██
+        #  ██████ ██   ██  ██████  ███████ ███████       ████   ██   ██ ███████ ██ ██████  ██   ██    ██    ██  ██████  ██   ████
+
 
     def bootstrapping_oob_sampling(self, df, n_samples):
         '''
@@ -163,6 +367,7 @@ class learning:
         train_dict = dict()
         test_dict = dict()
         for i, (train, test) in enumerate(unfolder):
+            #potrebbe esserci un errore nella timeseries visto che qui congono mescolate le righe invece delle colonne
             df_train = df.iloc[train].copy()
             df_test = df.iloc[test].copy()
             if shuffle and type != 'timeseries':

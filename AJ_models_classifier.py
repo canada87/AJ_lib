@@ -109,19 +109,29 @@ class learning_class:
         if net_type == 'normal':
 
             model = keras.Sequential()
-            model.add(keras.layers.Dense(int(input_dl/2), activation=active, input_dim = input_dl))
-            model.add(keras.layers.Dense(int(input_dl/10), activation = active))
-            model.add(keras.layers.Dense(int(input_dl/100), activation = active))
+            # model.add(keras.layers.Dense(int(input_dl/2), activation=active, input_dim = input_dl))
+            # model.add(keras.layers.Dense(int(input_dl/10), activation = active))
+            # model.add(keras.layers.Dense(int(input_dl/100), activation = active))
 
-            # model.add(keras.layers.Dense(10, activation=active, input_dim = input_dl))
-            # model.add(keras.layers.Dense(5, activation = active))
+            model.add(keras.layers.Dense(10, activation=active, input_dim = input_dl))
+            model.add(keras.layers.Dense(5, activation = active))
 
             if loss_type == 'sparse':
+            # predice da 2 a n classi, le classi NON devono essere one hot encoading
+            # siccome il layer finale ha una softmax functino viene dato come risultato solo il piu probabile
+            # serve quando si hanno molte classi ma ogni dato appartiene ad una e una sola classe
                 model.add(keras.layers.Dense(num_classes, activation = 'softmax'))
                 model.compile(optimizer = 'adam', loss = 'sparse_categorical_crossentropy', metrics=['accuracy'])
+
+            # predice da 2 a n classi, le classi devono trovarsi in one hot encoading visto che ogni classe ha il suo nodo di uscita ed e' abbinato ad una signoide che da valori di uscita tra 0 e 1,
+            # in pratica si ha su ogni nodo la probabilita di avere quella classe
+            # serve per quando si hanno piu classi che possono comparire per lo stesso dato (multiclasse)
             elif loss_type == 'multisparse':
                 model.add(keras.layers.Dense(num_classes, activation='sigmoid'))
                 model.compile(loss='mse', optimizer = 'adam', metrics = ['accuracy'])
+
+            # in presenza di 2 classi messe in un unico vettore 0 e' una classe 1 e' l'altra.
+            # ogni dato puo appartenere ad una sola classe
             elif loss_type == 'binary':
                 model.add(keras.layers.Dense(1, activation = 'sigmoid'))
                 model.compile(optimizer = 'adam', loss = 'binary_crossentropy', metrics=['accuracy'])
@@ -254,6 +264,9 @@ class learning_class:
         :param num_classes: number of classes, int
         :return: y_pred_matrix.shape[0] = xtest.shape[0], y_pred_matrix.shape[1] = len(models) + 1, Pandas matrix with the predicion for all the models and the average for the ensamble
         :return: y_prob_dict[model].shape[0] = xtest.shape[0], y_prob_dict[model].shape[1] = ytest.unique().shape[0], dictionary with a pandas matrix for each model, the pandas matrix represent the probability of success for each classes
+
+        it behaves differently if 'multispare' is selected, the function return imediatly with as y_prob_dict the probabilities for each classes and Y_pred the predictino for each classes.
+        It cannot be ensamble with the other models since 'multispare' can present multiple classes at the same time as valible prediction
         '''
 
         y_pred_matrix = pd.DataFrame()
@@ -263,7 +276,7 @@ class learning_class:
                 y_prob_dict[name_model] = pd.DataFrame(model.predict_proba(xtest))
                 y_pred_matrix[name_model] = model.predict_classes(xtest)
 
-            if name_model == 'deep learning normal multisparse':
+            elif name_model == 'deep learning normal multisparse':
                 y_prob_dict[name_model] = pd.DataFrame(model.predict(xtest))
                 df_pred = pd.DataFrame()
                 for col in y_prob_dict[name_model].columns:
@@ -349,10 +362,9 @@ class learning_class:
             ds().porta_a_finestra()
             j = j + 1
 
-    def score_models(self, models, y_true, y_prob_dict, y_pred_matrix):
+    def score_models(self, y_true, y_prob_dict, y_pred_matrix):
         '''
         generate the score with the true target
-        :param models: dictionary with as index the name of the models, as elements the models
         :param y_true: array with the targets, pandas (it is NOT onehot encoded)
         :param y_prob_dict: dictionary of pandas matrices with the probability resutls for all classes (it is produced by the prob_matrix_generator function)
         :param y_pred_matrix: pandas matrix with the predicted class for each model as column, the prediction comes in the same format of the target (it is NOT onehot encoded)
@@ -364,14 +376,13 @@ class learning_class:
 
         vet_nomi = []
         vet_accuracy = []
-        matr_score = np.zeros((len(models), num_class))
+        matr_score = np.zeros((y_pred_matrix.shape[1], num_class))
         vet_mae = []
 
         #trasforma il vettore dei target in un onehot encoded
         y_test_roc = self.onehotencoding_numerical_vector(y_true)
 
-        for i, (name_model, model) in enumerate(models.items()):
-            # accuracy = model.score(x_test, y_true)
+        for i, name_model in enumerate(y_pred_matrix.columns.tolist()):
             accuracy = accuracy_score(y_true, y_pred_matrix[name_model])
             mae = mean_absolute_error(y_true, y_pred_matrix[name_model])
 
@@ -390,30 +401,72 @@ class learning_class:
         score_data['mae'] = vet_mae
         for i in range(len(y_true.unique())):
             score_data['roc score class ' + str(np.sort(y_true.unique())[i])] = matr_score[:, i]
+        return score_data.T
 
-        vet_ave = []
-        for i in range(len(models)):
-            vet_ave.append(round(matr_score[i, :].mean(),3))
-        score_data['roc score average'] = vet_ave
-
-        score_data = score_data.T
-        ens_score = np.zeros(num_class)
-        j = 0
-        for col in y_prob_dict['Ensamble'].columns:
-            ens_score[j] = round(roc_auc_score(y_test_roc[:, j], y_prob_dict['Ensamble'][col]),3)
-            j = j + 1
-
-        ens_score_ave = round(ens_score.mean(),3)
-        ens_mae = mean_absolute_error(y_true, y_pred_matrix['Ensamble'])
-        ens_accuracy = accuracy_score(y_true, y_pred_matrix['Ensamble'])
-
-        temp_vet = ['Ensemble', round(ens_accuracy, 3), round(ens_mae, 3)]
-        for i in range(len(ens_score)):
-            temp_vet.append(ens_score[i])
-        temp_vet.append(ens_score_ave)
-
-        score_data[str(score_data.shape[1])] = temp_vet
-        return score_data
+    # def score_models_old(self, models, y_true, y_prob_dict, y_pred_matrix):
+    #     '''
+    #     generate the score with the true target
+    #     :param models: dictionary with as index the name of the models, as elements the models
+    #     :param y_true: array with the targets, pandas (it is NOT onehot encoded)
+    #     :param y_prob_dict: dictionary of pandas matrices with the probability resutls for all classes (it is produced by the prob_matrix_generator function)
+    #     :param y_pred_matrix: pandas matrix with the predicted class for each model as column, the prediction comes in the same format of the target (it is NOT onehot encoded)
+    #     :return: df_score.shape[1] = num of models + 1, df_score.shape[0] = (accuracy, mae, roc score)
+    #     '''
+    #
+    #     #trova quanti classi ci sono
+    #     num_class = y_prob_dict[list(y_prob_dict.keys())[0]].shape[1]
+    #
+    #     vet_nomi = []
+    #     vet_accuracy = []
+    #     matr_score = np.zeros((len(models), num_class))
+    #     vet_mae = []
+    #
+    #     #trasforma il vettore dei target in un onehot encoded
+    #     y_test_roc = self.onehotencoding_numerical_vector(y_true)
+    #
+    #     for i, (name_model, model) in enumerate(models.items()):
+    #         accuracy = accuracy_score(y_true, y_pred_matrix[name_model])
+    #         mae = mean_absolute_error(y_true, y_pred_matrix[name_model])
+    #
+    #         j=0
+    #         for col in y_prob_dict[name_model].columns:
+    #             matr_score[i, j] = round(roc_auc_score(y_test_roc[:, j], y_prob_dict[name_model][col]),3)
+    #             j = j + 1
+    #
+    #         vet_nomi.append(name_model)
+    #         vet_accuracy.append(round(float(accuracy),3))
+    #         vet_mae.append(round(mae,3))
+    #
+    #     score_data = pd.DataFrame()
+    #     score_data['model'] = vet_nomi
+    #     score_data['accuracy'] = vet_accuracy
+    #     score_data['mae'] = vet_mae
+    #     for i in range(len(y_true.unique())):
+    #         score_data['roc score class ' + str(np.sort(y_true.unique())[i])] = matr_score[:, i]
+    #
+    #     vet_ave = []
+    #     for i in range(len(models)):
+    #         vet_ave.append(round(matr_score[i, :].mean(),3))
+    #     score_data['roc score average'] = vet_ave
+    #
+    #     score_data = score_data.T
+    #     ens_score = np.zeros(num_class)
+    #     j = 0
+    #     for col in y_prob_dict['Ensamble'].columns:
+    #         ens_score[j] = round(roc_auc_score(y_test_roc[:, j], y_prob_dict['Ensamble'][col]),3)
+    #         j = j + 1
+    #
+    #     ens_score_ave = round(ens_score.mean(),3)
+    #     ens_mae = mean_absolute_error(y_true, y_pred_matrix['Ensamble'])
+    #     ens_accuracy = accuracy_score(y_true, y_pred_matrix['Ensamble'])
+    #
+    #     temp_vet = ['Ensemble', round(ens_accuracy, 3), round(ens_mae, 3)]
+    #     for i in range(len(ens_score)):
+    #         temp_vet.append(ens_score[i])
+    #     temp_vet.append(ens_score_ave)
+    #
+    #     score_data[str(score_data.shape[1])] = temp_vet
+    #     return score_data
 
     def plot_roc_curve(self, y_prob_dict, y_true):
         """Plot the roc curve for base learners and ensemble.
@@ -462,7 +515,7 @@ class learning_class:
             j = j + 1
 
     def score_accuracy_recall(self, y_pred_matrix, y_true, verbose = 1):
-        """evaluate accuracy recall and plot the confusio matrix for base learners and ensemble.
+        """evaluate accuracy recall and plot the confusion matrix for base learners and ensemble.
         :param y_true: array with the targets, pandas (it is NOT onehot encoded)
         :param y_pred_matrix: pandas matrix with the predicted class for each model as column, the prediction comes in the same format of the target (it is NOT onehot encoded)
         :param verbose: 0 or 1, with 1 the confusion matrix is ploted

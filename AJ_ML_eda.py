@@ -130,7 +130,7 @@ class learning:
         in some cases you may have columns with labels or names, and you don't want to reverse those, that's why you have to select the columns where perform the operations
         '''
         label_encoder = LabelEncoder()
-        label_encoder = label_encoder.fit(cols)
+        label_encoder = label_encoder.fit(df[cols])
         dict_class = dict(zip(label_encoder.classes_, range(len(label_encoder.classes_))))
         for col in cols:
             df[col] = df[col]*(dict_class[col]+1)

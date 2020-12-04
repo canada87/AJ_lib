@@ -7,6 +7,11 @@ import warnings
 import matplotlib.cbook
 warnings.filterwarnings("ignore",category=matplotlib.cbook.mplDeprecation)
 
+palette = ["#1F77B4","#FF7F0E","#2CA02C", "#00A3E0", '#4943cf', '#1eeca8', '#e52761', '#490b04', '#ffb3ba', '#ffdfba', '#d0d04a', '#baffc9', '#bae1ff', '#a3c1ad', '#a0d6b4', '#5f9ea0', '#317873', '#49796b',
+                   '#ffb3ba', '#ffdfba', '#d0d04a', '#baffc9', '#bae1ff', '#a3c1ad', '#a0d6b4', '#5f9ea0', '#317873', '#49796b', '#ffb3ba', '#ffdfba', '#d0d04a', '#baffc9', '#bae1ff',
+                   '#a3c1ad', '#a0d6b4', '#5f9ea0', '#317873', '#49796b', '#ffb3ba', '#ffdfba', '#d0d04a', '#baffc9', '#bae1ff', '#a3c1ad', '#a0d6b4']
+
+
 #workflow:
 #    import_data
 #    nuova_fig
@@ -35,6 +40,7 @@ class disegna:
     9. salva_graf
     10. salva_dati
     11. porta_a_finestra (mandatory)
+    12. aggiusta_la_finestra (if you use a different show function)
 
     """
 
@@ -163,7 +169,7 @@ class disegna:
                 ax1.bar(x[:] + delay/2, y, width, label=descrizione)
                 ax1.set_xticks(x)
                 if z != None:
-                    ax1.set_xticklabels(z, rotation = 90)
+                    ax1.set_xticklabels(z, rotation = 45)
 
         else:
             ax2.tick_params(axis='y', direction = 'in')
@@ -270,6 +276,13 @@ class disegna:
             plt.show()
         else:
             plt.close()
+
+#############################################
+    def aggiusta_la_finestra(self):
+        """
+        fit the plot into a canvas
+        """
+        fig.tight_layout()
 
 #############################################
     def salva_dati(self, x = 'empty', y = 'empty', with_error='no', x_error = 0, y_error = 0, nomefile = 'dati_new.txt'):

@@ -166,7 +166,10 @@ class disegna:
             if scat_plot == 'hist':
                 ax1.hist(x, bins = y, color = colore)
             if scat_plot == 'bar':
-                ax1.bar(x[:] + delay/2, y, width, label=descrizione)
+                #se color = None i colori vengono messi in automatico
+                if colore == '#00A3E0':
+                    colore = None
+                ax1.bar(x[:] + delay/2, y, width, label=descrizione, color=colore)
                 ax1.set_xticks(x)
                 if z != None:
                     ax1.set_xticklabels(z, rotation = 45)

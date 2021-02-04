@@ -9,17 +9,23 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import json
+import pickle
+
+import lime
+import lime.lime_tabular
+import shap
+
 
 from tensorflow import keras #funziona con tensorflow-gpu==1.14.0
 
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, RidgeClassifierCV
 from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from sklearn.metrics import roc_auc_score
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neighbors import KNeighborsClassifier, RadiusNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import mean_absolute_error
 from xgboost import XGBClassifier
@@ -84,6 +90,10 @@ class learning_class:
         rf = RandomForestClassifier(random_state=self.SEED)
         # xgb = XGBClassifier(random_state=self.SEED)
 
+        etc = ExtraTreeClassifier()
+        rnc = RadiusNeighborsClassifier()
+        rccv = RidgeClassifierCV()
+
 
         models_temp = {
                   'LogisticRegression': lr,
@@ -94,7 +104,10 @@ class learning_class:
                   'RandomForestClassifier': rf,
                   'GradientBoostingClassifier': gb,
                   'naive bayes': nb,
-                  'XGBClassifier':xgb
+                  'XGBClassifier':xgb,
+                  'ExtraTreeClassifier':etc,
+                  'RadiusNeighborsClassifier':rnc,
+                  'RidgeClassifierCV':rccv
                   }
 
         models = dict()
@@ -109,12 +122,12 @@ class learning_class:
         if net_type == 'normal':
 
             model = keras.Sequential()
-            # model.add(keras.layers.Dense(int(input_dl/2), activation=active, input_dim = input_dl))
-            # model.add(keras.layers.Dense(int(input_dl/10), activation = active))
-            # model.add(keras.layers.Dense(int(input_dl/100), activation = active))
+            model.add(keras.layers.Dense(int(input_dl/2), activation=active, input_dim = input_dl))
+            model.add(keras.layers.Dense(int(input_dl/10), activation = active))
+            model.add(keras.layers.Dense(int(input_dl/100), activation = active))
 
-            model.add(keras.layers.Dense(10, activation=active, input_dim = input_dl))
-            model.add(keras.layers.Dense(5, activation = active))
+            # model.add(keras.layers.Dense(10, activation=active, input_dim = input_dl))
+            # model.add(keras.layers.Dense(5, activation = active))
 
             if loss_type == 'sparse':
             # predice da 2 a n classi, le classi NON devono essere one hot encoading
@@ -160,6 +173,10 @@ class learning_class:
                 output = keras.layers.Dense(1, activation = 'sigmoid')(hidden1)
                 model = keras.models.Model(inputs = visible, outputs = output)
                 model.compile(optimizer = 'adam', loss = 'binary_crossentropy', metrics=['accuracy'])
+            elif loss_type == 'multisparse':
+                output = keras.layers.Dense(num_classes, activation='sigmoid')(hidden1)
+                model = keras.models.Model(inputs = visible, outputs = output)
+                model.compile(optimizer = 'adam', loss = 'mse', metrics=['accuracy'])
 
         return model
 
@@ -185,11 +202,15 @@ class learning_class:
         :param shuffle: Boolean, used to shuffle the data before the training if deep learning is used
         :return: models, a dictionary with as index the name of the models, as elements the models after the training
         :return: fitModel, scoring hystory of the deep learning over epochs or XGBClassifier'''
+        try:
+            self.classes = ytrain.columns#usato in caso di multiclass con target onehotencoded dove ogni colonna ha il nome della classe da predirre
+        except:
+            self.classes = []
         fitModel = dict()
         for i, (name_model, model) in enumerate(models.items()):
             if name_model == 'deep learning normal sparse' or name_model == 'deep learning normal binary' or name_model == 'deep learning normal multisparse':
                 fitModel[name_model] = model.fit(xtrain, ytrain, epochs = epochs, verbose = 1, validation_data= validation_data, shuffle = shuffle, batch_size = batch_size)
-            elif name_model == 'deep learning vgg sparse' or name_model == 'deep learning vgg binary':
+            elif name_model == 'deep learning vgg sparse' or name_model == 'deep learning vgg binary' or name_model == 'deep learning vgg multisparse':
                 xvgg = xtrain.copy()
                 xvgg = xvgg.to_numpy()
                 xvgg = xvgg.reshape(xvgg.shape[0], xvgg.shape[1], 1)
@@ -255,13 +276,12 @@ class learning_class:
         # ██       ██████  ██   ██ ███████  ██████ ██   ██ ███████    ██
 
 
-
-
-    def prob_matrix_generator(self, models, xtest, num_classes):
+    def prob_matrix_generator(self, models, xtest, num_classes, multi_class = False):
         '''generate the prediction and the probabilities with all the models in the list and add all of them to the same matrix, adding the average prediciton (ensamble)
         :param models: dictionary with as index the name of the models, as elements the models
         :param xtest: matrix with the features, pandas
         :param num_classes: number of classes, int
+        :param multi_class: True only if is a multi_class problem with the target one hot encoded
         :return: y_pred_matrix.shape[0] = xtest.shape[0], y_pred_matrix.shape[1] = len(models) + 1, Pandas matrix with the predicion for all the models and the average for the ensamble
         :return: y_prob_dict[model].shape[0] = xtest.shape[0], y_prob_dict[model].shape[1] = ytest.unique().shape[0], dictionary with a pandas matrix for each model, the pandas matrix represent the probability of success for each classes
 
@@ -269,7 +289,7 @@ class learning_class:
         It cannot be ensamble with the other models since 'multispare' can present multiple classes at the same time as valible prediction
         '''
 
-        y_pred_matrix = pd.DataFrame()
+        y_pred_matrix = pd.DataFrame() if multi_class == False else dict()
         y_prob_dict = {}
         for i, (name_model, model) in enumerate(models.items()):
             if name_model == 'deep learning normal sparse':
@@ -277,11 +297,8 @@ class learning_class:
                 y_pred_matrix[name_model] = model.predict_classes(xtest)
 
             elif name_model == 'deep learning normal multisparse':
-                y_prob_dict[name_model] = pd.DataFrame(model.predict(xtest))
-                df_pred = pd.DataFrame()
-                for col in y_prob_dict[name_model].columns:
-                    df_pred[col] = round(y_prob_dict[name_model][col])
-                return y_prob_dict[name_model], df_pred
+                y_prob_dict[name_model] = pd.DataFrame(model.predict(xtest), columns = self.classes)
+                y_pred_matrix[name_model] = y_prob_dict[name_model].apply(round).astype(int)
 
             elif name_model == 'deep learning normal binary':
                 list_temp = model.predict_proba(xtest)
@@ -297,7 +314,6 @@ class learning_class:
                 xvgg = xvgg.to_numpy()
                 xvgg = xvgg.reshape(xvgg.shape[0], xvgg.shape[1], 1)
                 y_prob_dict[name_model] = pd.DataFrame(model.predict(xvgg))
-                print(y_prob_dict[name_model])
                 y_pred_matrix[name_model] = np.argmax(model.predict(xvgg),axis=1)
 
             elif name_model == 'deep learning vgg binary':
@@ -312,19 +328,200 @@ class learning_class:
                 y_prob_dict[name_model] = df_temp
                 y_pred_matrix[name_model] = np.argmax(df_temp.to_numpy(), axis = 1)
 
+            elif name_model == 'deep learning vgg multisparse':
+                xvgg = xtest.copy()
+                xvgg = xvgg.to_numpy()
+                xvgg = xvgg.reshape(xvgg.shape[0], xvgg.shape[1], 1)
+                y_prob_dict[name_model] = pd.DataFrame(model.predict(xvgg), columns = self.classes)
+                y_pred_matrix[name_model] = y_prob_dict[name_model].apply(round).astype(int)
             else:
-                y_prob_dict[name_model] = pd.DataFrame(model.predict_proba(xtest))
-                y_pred_matrix[name_model] = model.predict(xtest)
+                if multi_class:
+                    pred_temp = model.predict_proba(xtest)
+                    df_temp = pd.DataFrame()
+                    for l, clas in enumerate(self.classes):
+                        df_temp[clas] = pred_temp[l][:,0]
+                    y_prob_dict[name_model] = df_temp
+                    y_pred_matrix[name_model] = pd.DataFrame(model.predict(xtest), columns = self.classes).astype(int)
+                else:
+                    y_prob_dict[name_model] = pd.DataFrame(model.predict_proba(xtest))
+                    y_pred_matrix[name_model] = model.predict(xtest)
 
-        Prob_ens = np.zeros((xtest.shape[0], num_classes))
-        Prob_ens = pd.DataFrame(Prob_ens)
-        for name in y_prob_dict:
-            Prob_ens = y_prob_dict[name] + Prob_ens
-        Prob_ens = Prob_ens/len(y_prob_dict)
-        y_prob_dict['Ensamble'] = Prob_ens
-        y_pred_matrix['Ensamble'] = round(y_pred_matrix.mean(axis=1))
-        y_pred_matrix['Ensamble'] = y_pred_matrix['Ensamble'].astype(int)
+        if multi_class:
+            Prob_ens = np.zeros((xtest.shape[0], num_classes))
+            Prob_ens = pd.DataFrame(Prob_ens)
+            Prob_ens.columns = self.classes
+            for name in y_prob_dict:
+                Prob_ens = y_prob_dict[name] + Prob_ens
+            Prob_ens = Prob_ens/len(y_prob_dict)
+            y_prob_dict['Ensamble'] = Prob_ens
+
+            Prob_ens = np.zeros((xtest.shape[0], num_classes))
+            Prob_ens = pd.DataFrame(Prob_ens)
+            Prob_ens.columns = self.classes
+            for name in y_pred_matrix:
+                Prob_ens = y_pred_matrix[name] + Prob_ens
+            Prob_ens = round(Prob_ens/len(y_pred_matrix)).astype(int)
+            y_pred_matrix['Ensamble'] = Prob_ens
+        else:
+            Prob_ens = np.zeros((xtest.shape[0], num_classes))
+            Prob_ens = pd.DataFrame(Prob_ens)
+            for name in y_prob_dict:
+                Prob_ens = y_prob_dict[name] + Prob_ens
+            Prob_ens = Prob_ens/len(y_prob_dict)
+            y_prob_dict['Ensamble'] = Prob_ens
+            y_pred_matrix['Ensamble'] = round(y_pred_matrix.mean(axis=1)).astype(int)
         return y_prob_dict, y_pred_matrix
+
+
+    def interpret_models(self, models, xtest, ytest, predict_element_id = 1, num_features = 2, verbose = 0, web = False):
+        '''
+        using LIME evaluate the importance of the features on the prediction
+        :param models: dictionary with as index the name of the models, as elements the models
+        :param xtest: matrix with the features, pandas
+        :param ytest: array with the targets, pandas series (it is NOT onehot encoded)
+        :predict_element_id: id of the element to evaluate
+        :num_features: number of features to consider into the evaluation
+        :verbose: plot the results
+        :web: produce a summary on html
+
+        :return: interpretation_dict[model], dictionary with a pandas matrix for each model, the pandas matrix represent the importance of each features on the interested element
+        '''
+        import webbrowser
+
+        feat = xtest.columns.tolist()
+        interpretation_dict = dict()
+        for i, (name_model, model) in enumerate(models.items()):
+
+            def prob(data):
+                return np.array(model.predict_proba(data))
+
+            explainer = lime.lime_tabular.LimeTabularExplainer(xtest.astype(int).values,
+                                                                mode='classification',
+                                                                training_labels=ytest,
+                                                                feature_names=feat,
+                                                                discretize_continuous=True)
+
+            exp = explainer.explain_instance(xtest.loc[predict_element_id].astype(int).values,
+                                            predict_fn = prob,
+                                            num_features=num_features)
+
+            if web:
+                exp.save_to_file('exp.html')
+                webbrowser.open('C:/Users/Max Power/OneDrive/ponte/programmi/python/competition/interpretation/exp.html')
+
+            if verbose == 1:
+                exp.as_pyplot_figure()
+                plt.show()
+
+            interpretation_dict[name_model] = pd.DataFrame(exp.as_list())
+
+        return interpretation_dict
+
+
+    def interpret_models_heatmap(self, models, xtrain, ytrain, xtest, ytest, scale = False, shap_interp = False):
+        '''
+        using LIME evaluate the importance of the features on the entire test set and produce a heatmap
+        :param models: dictionary with as index the name of the models, as elements the models
+        :param xtrain: matrix with the features, pandas
+        :param ytrain: array with the targets, pandas series (it is NOT onehot encoded)
+        :param xtest: matrix with the features, pandas
+        :param ytest: array with the targets, pandas series (it is NOT onehot encoded)
+        :param scale: True or False, scale the importance values or not
+        '''
+
+        def double_heatmap(data1, data2, cbar_label1, cbar_label2,
+                           title='', subplot_top=0.86, cmap1='viridis', cmap2='magma',
+                           center1=0.5, center2=0, grid_height_ratios=[1,4],
+                           figsize=(14,10)):
+            fig, (ax,ax2) = plt.subplots(nrows=2, figsize=figsize,
+                                         gridspec_kw={'height_ratios':grid_height_ratios})
+
+            fig.suptitle(title)
+            fig.subplots_adjust(hspace=0.02, top=subplot_top)
+
+            # heatmap for actual and predicted percentiles
+            sns.heatmap(data1, cmap="viridis", ax=ax, xticklabels=False, center=center1,
+                        cbar_kws={'location':'top',
+                                  'use_gridspec':False,
+                                  'pad':0.1,
+                                  'label': cbar_label1})
+            ax.set_xlabel('')
+
+            # heatmap of the feature contributions
+            sns.heatmap(data2, ax=ax2, xticklabels=False, center=center2, cmap=cmap2,
+                        cbar_kws={'location':'bottom',
+                                  'use_gridspec':False,
+                                  'pad':0.07,
+                                  'shrink':0.41,
+                                  'label': cbar_label2})
+            ax2.set_ylabel('');
+            plt.show()
+
+        feat = xtrain.columns.tolist()
+        num_features = len(feat)
+
+        for i, (name_model, model) in enumerate(models.items()):
+
+            feature_importance = model.feature_importances_
+            feature_df = pd.DataFrame(data=feature_importance, index=xtrain.columns, columns=['importance'])
+            feature_df.sort_values(by='importance', inplace=True, ascending=False)
+
+            plt.bar(feature_df.index.tolist(), feature_df['importance'].tolist())
+            plt.xticks(rotation=90)
+            plt.tight_layout()
+            plt.show()
+
+            def prob(data):
+                return np.array(model.predict_proba(data))
+
+            explainer = lime.lime_tabular.LimeTabularExplainer(xtrain.astype(int).values,
+                                                                mode='classification',
+                                                                training_labels=ytrain,
+                                                                feature_names=feat,
+                                                                discretize_continuous=False)
+
+            lime_expl = xtest.apply(explainer.explain_instance,
+                                    predict_fn=prob,
+                                    num_features=num_features,
+                                    axis=1)
+
+            lime_dfs = [pd.DataFrame(dict(exp.as_list() + [('pred', round(exp.predict_proba[1]))]), index=[0]) for exp in lime_expl]
+            lime_expl_df = pd.concat(lime_dfs, ignore_index=True)
+            # print(lime_expl_df.head(10))
+
+            data1 = pd.DataFrame()
+            data1['true'] = ytest.reset_index(drop = True)
+            data1['pred'] = lime_expl_df['pred']
+
+            data2 = lime_expl_df.drop(['pred'], axis=1)
+            if scale:
+                scaled_X = (xtest - explainer.scaler.mean_) / explainer.scaler.scale_
+                data2 = data2 * scaled_X.reset_index(drop = True)
+
+            double_heatmap(data1.T, data2.T, cbar_label1 = 'true vs pred', cbar_label2 = 'contribution',
+                           title=name_model, subplot_top=0.86, cmap1='viridis', cmap2='magma',
+                           center1=0.5, center2=0, grid_height_ratios=[1,4],
+                           figsize=(14,10))
+
+            if shap_interp:
+                shap_explainer = shap.TreeExplainer(model)
+                test_shap_vals = shap_explainer.shap_values(xtest.to_numpy())
+                shap.summary_plot(test_shap_vals, xtest)
+                for feat_single in feat:
+                    try:
+                        shap.dependence_plot(feat_single, test_shap_vals[0], xtest, dot_size=100)
+                    except:
+                        shap.dependence_plot(feat_single, test_shap_vals, xtest, dot_size=100)
+                try:
+                    data2 = pd.DataFrame(test_shap_vals[0], columns = feat)
+                except:
+                    data2 = pd.DataFrame(test_shap_vals, columns = feat)
+
+                double_heatmap(data1.T, data2.T, cbar_label1 = 'true vs pred', cbar_label2 = 'contribution',
+                               title=name_model, subplot_top=0.86, cmap1='viridis', cmap2='magma',
+                               center1=0.5, center2=0, grid_height_ratios=[1,4],
+                               figsize=(14,10))
+
 
 
         # ███████  ██████  ██████  ██████  ███████
@@ -361,6 +558,24 @@ class learning_class:
             ds().legenda()
             ds().porta_a_finestra()
             j = j + 1
+
+    def from_multilabel_to_single(self, y_true, y_prob_dict, y_pred_matrix, clas):
+        '''
+        when preforming multi_class prediction and the prediction are in a dictionary instead of a pandas matrix
+        this function transform the dictionary into a pandas matrix that can be used in the score_models
+        it selects only one class, so it has to be repeated as many times as the number of classes
+        :param y_true: matrix with the targets, pandas (it is onehot encoded)
+        :param y_prob_dict: dictionary of pandas matrices with the probability resutls for all classes (it is produced by the prob_matrix_generator function)
+        :param y_pred_matrix: dictionary of pandas matrices with the predicted class for each model as column, the prediction comes in the same format of the target (it is onehot encoded)
+        '''
+        y_prob_dict_class = dict()
+        y_pred_matrix_class = pd.DataFrame()
+        for model in y_prob_dict:
+            y_prob_dict_class[model] = pd.DataFrame(y_prob_dict[model][clas])
+            y_prob_dict_class[model][clas+' 1'] = 1 - y_prob_dict_class[model][clas]
+            y_pred_matrix_class[model] = y_pred_matrix[model][clas]
+        y_test_class = y_true[clas]
+        return y_test_class, y_prob_dict_class, y_pred_matrix_class
 
     def score_models(self, y_true, y_prob_dict, y_pred_matrix):
         '''
@@ -402,71 +617,6 @@ class learning_class:
         for i in range(len(y_true.unique())):
             score_data['roc score class ' + str(np.sort(y_true.unique())[i])] = matr_score[:, i]
         return score_data.T
-
-    # def score_models_old(self, models, y_true, y_prob_dict, y_pred_matrix):
-    #     '''
-    #     generate the score with the true target
-    #     :param models: dictionary with as index the name of the models, as elements the models
-    #     :param y_true: array with the targets, pandas (it is NOT onehot encoded)
-    #     :param y_prob_dict: dictionary of pandas matrices with the probability resutls for all classes (it is produced by the prob_matrix_generator function)
-    #     :param y_pred_matrix: pandas matrix with the predicted class for each model as column, the prediction comes in the same format of the target (it is NOT onehot encoded)
-    #     :return: df_score.shape[1] = num of models + 1, df_score.shape[0] = (accuracy, mae, roc score)
-    #     '''
-    #
-    #     #trova quanti classi ci sono
-    #     num_class = y_prob_dict[list(y_prob_dict.keys())[0]].shape[1]
-    #
-    #     vet_nomi = []
-    #     vet_accuracy = []
-    #     matr_score = np.zeros((len(models), num_class))
-    #     vet_mae = []
-    #
-    #     #trasforma il vettore dei target in un onehot encoded
-    #     y_test_roc = self.onehotencoding_numerical_vector(y_true)
-    #
-    #     for i, (name_model, model) in enumerate(models.items()):
-    #         accuracy = accuracy_score(y_true, y_pred_matrix[name_model])
-    #         mae = mean_absolute_error(y_true, y_pred_matrix[name_model])
-    #
-    #         j=0
-    #         for col in y_prob_dict[name_model].columns:
-    #             matr_score[i, j] = round(roc_auc_score(y_test_roc[:, j], y_prob_dict[name_model][col]),3)
-    #             j = j + 1
-    #
-    #         vet_nomi.append(name_model)
-    #         vet_accuracy.append(round(float(accuracy),3))
-    #         vet_mae.append(round(mae,3))
-    #
-    #     score_data = pd.DataFrame()
-    #     score_data['model'] = vet_nomi
-    #     score_data['accuracy'] = vet_accuracy
-    #     score_data['mae'] = vet_mae
-    #     for i in range(len(y_true.unique())):
-    #         score_data['roc score class ' + str(np.sort(y_true.unique())[i])] = matr_score[:, i]
-    #
-    #     vet_ave = []
-    #     for i in range(len(models)):
-    #         vet_ave.append(round(matr_score[i, :].mean(),3))
-    #     score_data['roc score average'] = vet_ave
-    #
-    #     score_data = score_data.T
-    #     ens_score = np.zeros(num_class)
-    #     j = 0
-    #     for col in y_prob_dict['Ensamble'].columns:
-    #         ens_score[j] = round(roc_auc_score(y_test_roc[:, j], y_prob_dict['Ensamble'][col]),3)
-    #         j = j + 1
-    #
-    #     ens_score_ave = round(ens_score.mean(),3)
-    #     ens_mae = mean_absolute_error(y_true, y_pred_matrix['Ensamble'])
-    #     ens_accuracy = accuracy_score(y_true, y_pred_matrix['Ensamble'])
-    #
-    #     temp_vet = ['Ensemble', round(ens_accuracy, 3), round(ens_mae, 3)]
-    #     for i in range(len(ens_score)):
-    #         temp_vet.append(ens_score[i])
-    #     temp_vet.append(ens_score_ave)
-    #
-    #     score_data[str(score_data.shape[1])] = temp_vet
-    #     return score_data
 
     def plot_roc_curve(self, y_prob_dict, y_true):
         """Plot the roc curve for base learners and ensemble.
@@ -522,8 +672,9 @@ class learning_class:
         :return: accurary_real.shape[0] = y_pred_matrix.shape[0], accurary_real.shape[1] = (accuracy_tot, recall_average, precision_average), pandas matrix with the models and some scores
         """
         # labels = np.sort(y_true.unique())
-        y_pred_matrix['Ensamble'] = y_pred_matrix['Ensamble'].map(round)
+        # y_pred_matrix['Ensamble'] = y_pred_matrix['Ensamble'].map(round)
         accurary_real = pd.DataFrame()
+        self.confusion_matrix_dict = dict()
         for col in y_pred_matrix.columns:
             cm = confusion_matrix(y_target=y_true, y_predicted=y_pred_matrix[col], binary=False)
             prob_cm =  np.zeros_like(cm).astype(float)
@@ -642,8 +793,11 @@ class learning_class:
                 fig.tight_layout()
                 plt.show()
 
+            self.confusion_matrix_dict[col] = df_cm
+
         accurary_real = accurary_real.T
         accurary_real.columns = ['accuracy_tot', 'accuracy_average', 'precision_average', 'recall_average']
+
         return accurary_real
 
 
@@ -726,3 +880,39 @@ class learning_class:
             plt.ylabel('Classification Error')
             plt.title('XGBoost Classification Error')
             plt.show()
+
+
+
+            # ███████  █████  ██    ██ ███████
+            # ██      ██   ██ ██    ██ ██
+            # ███████ ███████ ██    ██ █████
+            #      ██ ██   ██  ██  ██  ██
+            # ███████ ██   ██   ████   ███████
+
+    def save_model(self, models, name):
+
+        models_skl = dict()
+        for model in models:
+            if 'deep learning' in model:
+                models[model].save(name+' '+model+'.h5')
+            else:
+                models_skl[model] = models[model]
+
+        with open(name + '.pkl', 'wb') as f:
+            pickle.dump(models_skl, f, pickle.HIGHEST_PROTOCOL)
+
+        with open(name + '_classes.pkl', 'wb') as f:
+            pickle.dump(self.classes, f, pickle.HIGHEST_PROTOCOL)
+
+
+    def load_model(self, name, net_type = '', loss_type = ''):
+        with open(name + '_classes.pkl', 'rb') as f:
+            self.classes = pickle.load(f)
+
+        with open(name + '.pkl', 'rb') as f:
+            models = pickle.load(f)
+
+        if net_type != '':
+            models['deep learning '+net_type+' '+loss_type] = keras.models.load_model(name+' deep learning '+net_type+' '+loss_type+'.h5')
+
+        return models

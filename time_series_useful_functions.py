@@ -32,7 +32,7 @@ series.plot(style='k.')
 pyplot.show()
 
 #multy plot with grouped with a specific frequency
-groups = series.groupby(Grouper(freq='A'))
+groups = series.groupby(pd.Grouper(freq='A'))
 years = DataFrame()
 for name, group in groups:
     years[name.year] = group.values
@@ -49,7 +49,7 @@ pyplot.show()
 
 #box plot data groupped with a specif frequency
 one_year = series['1990']
-groups = one_year.groupby(Grouper(freq='M'))
+groups = one_year.groupby(pd.Grouper(freq='M'))
 months = concat([DataFrame(x[1].values) for x in groups], axis=1)
 months = DataFrame(months)
 months.columns = range(1,13)
@@ -57,7 +57,7 @@ months.boxplot()
 pyplot.show()
 
 #heatmap of a selected frequency
-groups = series.groupby(Grouper(freq='A'))
+groups = series.groupby(pd.Grouper(freq='A'))
 years = DataFrame()
 for name, group in groups:
     years[name.year] = group.values

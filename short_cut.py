@@ -86,3 +86,36 @@ class work_functions:
             learn.score_accuracy_recall(y_pred_matrix, Y_test, verbose = 1)
             learn.plot_precision_recall(y_prob_dict, Y_test)
         return score, y_pred_matrix
+
+    def multi_classification_non_mutualy_exlusive(x_train, y_train, x_test, y_test, verbose_plot = 0, verbose_dl = 0, verbose = 0):
+        learn = learning_class()
+        models = dict()
+        models = learn.get_models(['RandomForestClassifier', 'DecisionTreeClassifier'])
+        # models = learn.get_models(['RandomForestClassifier', 'MLPClassifier', 'GradientBoostingClassifier'])
+        print(x_train.shape)
+        num_classes = y_train.shape[1]
+
+        net_type = 'vgg'
+        loss_type = 'multisparse'
+        models['deep learning '+net_type+' '+loss_type] = learn.get_deep_learning_model(x_train.shape[1], net_type = net_type, loss_type = loss_type, num_classes = num_classes)
+        models, hystory = learn.train_models(models, x_train, y_train, epochs = 50, validation_data = (x_test, y_test))
+
+        if verbose_dl == 1:
+            learn.plot_history(hystory)
+
+        num_class = int(y_test.shape[1])
+        y_prob_dict, y_pred_matrix = learn.prob_matrix_generator(models, x_test, num_class, multi_class = True)
+        # print(y_pred_matrix)
+        # print(y_prob_dict)
+        df_score = pd.DataFrame()
+        for clas in learn.classes:
+            y_test_class, y_prob_dict_class, y_pred_matrix_class = learn.from_multilabel_to_single(y_test, y_prob_dict, y_pred_matrix, clas)
+            # print(y_pred_matrix_class)
+            score = learn.score_models(y_test_class, y_prob_dict_class, y_pred_matrix_class)
+            df_score[clas] = score.loc['accuracy', :]
+            if verbose == 1:
+                print(score)
+            if verbose_plot == 1:
+                learn.score_accuracy_recall(y_pred_matrix_class, y_test_class, verbose = 1)
+        df_score.index = y_pred_matrix.keys()
+        return df_score.T, y_pred_matrix

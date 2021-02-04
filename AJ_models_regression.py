@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import json
+import pickle
 
 from tensorflow import keras
 
@@ -215,6 +216,10 @@ class learning_reg:
         :param shuffle: Boolean, used to shuffle the data before the training if deep learning is used
         :return: models, a dictionary with as index the name of the models, as elements the models after the training'''
         fitModel = 0
+        try:
+            self.targets = ytrain.columns#usato in caso di multi-tragets con target dove ogni colonna ha il nome della variabile da predirre
+        except:
+            self.targets = []
         for i, (name_model, model) in enumerate(models.items()):
             if name_model == 'deep learning normal':
                 fitModel = model.fit(xtrain, ytrain, epochs = epochs, verbose = 1, validation_data= validation_data, shuffle = shuffle, batch_size = batch_size)
@@ -419,14 +424,13 @@ class learning_reg:
 
 
 
-    def predict_matrix_generator(self, models, xtest):
+    def predict_matrix_generator(self, models, xtest, multi_target = False):
         '''generate the prediction with all the model in the list and add all of them to the same matrix, adding the average prediciton (ensamble)
         :param models: dictionary with as index the name of the models, as elements the models
         :param xtest: matrix with the features, pandas or numpy
         :return: Predict_matrix.shape[0] = xtest.shape[0], Predict_matrix.shape[1] = len(models) + 1, Pandas matrix with the predicion for all the models and the average for the ensamble
         '''
-        Predict_matrix = pd.DataFrame()
-        cols = list()
+        Predict_matrix = pd.DataFrame() if multi_target == False else dict()
         for i, (name_model, model) in enumerate(models.items()):
             if name_model == 'SARIMAX' or name_model == 'ARIMA':
                 Predict_matrix[name_model] = model.forecast(xtest.shape[0], exog = xtest).reset_index(drop = True)
@@ -452,8 +456,18 @@ class learning_reg:
                 Predict_matrix[name_model] = model.predict(future)['yhat']
             else:
                 Predict_matrix[name_model] = model.predict(xtest)
-            cols.append(name_model)
-        Predict_matrix['Ensamble'] = Predict_matrix.mean(axis=1)
+                if multi_target:
+                    Predict_matrix[name_model] = pd.DataFrame(Predict_matrix[name_model], columns = self.targets)
+        if multi_target:
+            Pred_ens = np.zeros((xtest.shape[0], len(self.targets)))
+            Pred_ens = pd.DataFrame(Pred_ens)
+            Pred_ens.columns = self.targets
+            for name in Predict_matrix:
+                Pred_ens = Predict_matrix[name] + Pred_ens
+            Pred_ens = Pred_ens/len(Predict_matrix)
+            Predict_matrix['Ensamble'] = Pred_ens
+        else:
+            Predict_matrix['Ensamble'] = Predict_matrix.mean(axis=1)
         return Predict_matrix
 
     def predict_rolling_ARIMA(self, ytrain, ytest, order, type):
@@ -537,7 +551,19 @@ class learning_reg:
         #      ██ ██      ██    ██ ██   ██ ██
         # ███████  ██████  ██████  ██   ██ ███████
 
-
+    def from_multilabel_to_single(self, y_true, y_pred_matrix, target):
+        '''
+        when preforming multi_class prediction and the prediction are in a dictionary instead of a pandas matrix
+        this function transform the dictionary into a pandas matrix that can be used in the score_models
+        it selects only one target, so it has to be repeated as many times as the number of targets
+        :param y_true: matrix with the targets, pandas
+        :param y_pred_matrix: dictionary of pandas matrices with the predicted target for each model as column, the prediction comes in the same format of the target
+        '''
+        y_pred_matrix_traget = pd.DataFrame()
+        for model in y_pred_matrix:
+            y_pred_matrix_traget[model] = y_pred_matrix[model][target]
+        y_test_target = y_true[target]
+        return y_test_target, y_pred_matrix_traget
 
     def score_VAR_correlation(self, models, x_train, lag = 0, maxlag=None):
         '''
@@ -579,7 +605,7 @@ class learning_reg:
                     df_results[col] = [round(val, 2)]
                 return df_results.T
 
-    def score_models(self, y_test, Predict_matrix):
+    def score_models(self, y_test, Predict_matrix, verbose = 0):
         '''
         generate the score with the actual test target
         :param y_test: array with the actual targets, pandas or numpy
@@ -604,6 +630,13 @@ class learning_reg:
 
         df_score = df_score.T
         df_score.columns = ['MAE', 'MSE', 'R2', 'R2 a mano', 'residual']
+
+        if verbose == 1:
+            ds().nuova_fig(1)
+            ds().titoli(titolo='target - Ensamble', xtag='real', ytag='predict')
+            ds().dati(x = y_test, y = Predict_matrix['Ensamble'], scat_plot ='scat', larghezza_riga =15)
+            plt.plot([y_test.min(), y_test.max()],[y_test.min(), y_test.max()], linestyle = '--')
+            ds().porta_a_finestra()
         return df_score
 
 
@@ -655,3 +688,36 @@ class learning_reg:
             plt.ylabel('Classification Error')
             plt.title('XGBoost Classification Error')
             plt.show()
+
+            # ███████  █████  ██    ██ ███████
+            # ██      ██   ██ ██    ██ ██
+            # ███████ ███████ ██    ██ █████
+            #      ██ ██   ██  ██  ██  ██
+            # ███████ ██   ██   ████   ███████
+
+    def save_model(self, models, name):
+        models_skl = dict()
+        for model in models:
+            if 'deep learning' in model:
+                models[model].save(name+' '+model+'.h5')
+            else:
+                models_skl[model] = models[model]
+
+        with open(name + '.pkl', 'wb') as f:
+            pickle.dump(models_skl, f, pickle.HIGHEST_PROTOCOL)
+
+        with open(name + '_classes.pkl', 'wb') as f:
+            pickle.dump(self.targets, f, pickle.HIGHEST_PROTOCOL)
+
+
+    def load_model(self, name, net_type = ''):
+        with open(name + '_classes.pkl', 'rb') as f:
+            self.targets = pickle.load(f)
+
+        with open(name + '.pkl', 'rb') as f:
+            models = pickle.load(f)
+
+        if net_type != '':
+            models['deep learning '+net_type] = keras.models.load_model(name+' deep learning '+net_type+'.h5')
+
+        return models

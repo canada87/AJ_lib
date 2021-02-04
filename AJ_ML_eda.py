@@ -327,6 +327,16 @@ class learning:
         # ██      ██   ██ ██    ██      ██      ██      ██  ██  ██   ██ ██      ██ ██   ██ ██   ██    ██    ██ ██    ██ ██  ██ ██
         #  ██████ ██   ██  ██████  ███████ ███████       ████   ██   ██ ███████ ██ ██████  ██   ██    ██    ██  ██████  ██   ████
 
+    def balance_classes_with_undersampling(self, df, col):
+        classes = df[col].value_counts()
+        classes = classes.sort_values(ascending = True).reset_index()
+        classes.rename(columns={'index':'class'}, inplace=True)
+        min_num = classes.loc[0,col]
+
+        df_equal_class = pd.DataFrame()
+        for clas in classes['class']:
+            df_equal_class = pd.concat([df_equal_class, df[df[col]==clas].sample(n = min_num)])
+        return df_equal_class
 
     def bootstrapping_oob_sampling(self, df, n_samples):
         '''

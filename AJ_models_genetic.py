@@ -6,8 +6,8 @@ sys.path.insert(0, 'C:/Users/Max Power/OneDrive/ponte/programmi/python/progetto2
 sys.path.insert(0, 'C:/Users/ajacassi/OneDrive/ponte/programmi/python/progetto2/AJ_lib')
 from AJ_draw import disegna as ds
 
-from keras.models import Sequential
-from keras.layers import Dense
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
 from sklearn.metrics import mean_absolute_error
 import numpy as np
 import random

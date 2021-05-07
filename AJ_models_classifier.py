@@ -122,12 +122,12 @@ class learning_class:
         if net_type == 'normal':
 
             model = keras.Sequential()
-            model.add(keras.layers.Dense(int(input_dl/2), activation=active, input_dim = input_dl))
-            model.add(keras.layers.Dense(int(input_dl/10), activation = active))
-            model.add(keras.layers.Dense(int(input_dl/100), activation = active))
+            # model.add(keras.layers.Dense(int(input_dl/2), activation=active, input_dim = input_dl))
+            # model.add(keras.layers.Dense(int(input_dl/10), activation = active))
+            # model.add(keras.layers.Dense(int(input_dl/100), activation = active))
 
-            # model.add(keras.layers.Dense(10, activation=active, input_dim = input_dl))
-            # model.add(keras.layers.Dense(5, activation = active))
+            model.add(keras.layers.Dense(10, activation=active, input_dim = input_dl))
+            model.add(keras.layers.Dense(5, activation = active))
 
             if loss_type == 'sparse':
             # predice da 2 a n classi, le classi NON devono essere one hot encoading

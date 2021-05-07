@@ -25,7 +25,7 @@ from itertools import permutations
 
 from xgboost import XGBRegressor
 import pickle
-from lib_models_classifier import learning_class
+from AJ_models_classifier import learning_class
 
 class peeking:
     def __init__(self, data = 0):
@@ -61,6 +61,11 @@ class peeking:
     def plot_correlation_roy(self, col_y):
         for i in range(0, len(self.data.columns), 5):
             sns.pairplot(data=self.data, x_vars = self.data.columns[i:i+5], y_vars = [col_y])
+        plt.show()
+
+    def plot_pairplot(self):
+        plt.figure(1, figsize=(16,14))
+        sns.pairplot(self.data, corner=True)
         plt.show()
 
 class learning:
@@ -411,22 +416,23 @@ class learning:
 
         return x_train, x_test
 
-    def correlation_matrix(self, col_y, corr_value = 0.95, corr_value_w_targhet = 0.95, plot_matr = 'yes'):
+    def correlation_matrix(self, col_y, corr_value = 0.95, corr_value_w_targhet = 1.0, plot_matr = 'yes'):
         """
         'col_y' represent the target column
         """
         corr = self.data.corr().abs()
 
         if plot_matr == 'yes':
+            plt.figure(1, figsize=(12,10))
             sns.heatmap(corr[(corr >= 0.5)], cmap='viridis', vmax=1.0, vmin=-1.0, linewidths=0.1, annot=True, annot_kws={"size": 8}, square=True, linecolor="black");
             plt.show()
 
-        corr_with_target = corr[col_y]#correlation with the target
-        relevant_feature_with_target = corr_with_target[corr_with_target < corr_value_w_targhet]
+        corr_with_target = corr[col_y].fillna(0)#correlation with the target
+        relevant_feature_with_target = corr_with_target[corr_with_target < corr_value_w_targhet].sort_values()#i valori sono espressi in ordine crescente, il primo elemento e' il meno correlato e l'ultimo e' il piu correlato
 
         upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(np.bool))#select upper triangle of correlation matrix
         correlation_between_parameters = [column for column in upper.columns if any(upper[column] > corr_value)]
-        return relevant_feature_with_target.index, correlation_between_parameters
+        return relevant_feature_with_target, correlation_between_parameters
 
     def feature_importance(self, x_train, file_name = 'model.sav'):
         model = pickle.load(open(file_name, 'rb'))

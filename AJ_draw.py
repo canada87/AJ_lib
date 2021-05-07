@@ -173,6 +173,9 @@ class disegna:
                 ax1.set_xticks(x)
                 if z != None:
                     ax1.set_xticklabels(z, rotation = 45)
+            if scat_plot == 'pie':
+                ax1.pie(sizes = y, labels = x, autopct = '%1.1f%%', startangle = 90)
+                ax1.axis('equal')
 
         else:
             ax2.tick_params(axis='y', direction = 'in')
@@ -182,6 +185,8 @@ class disegna:
                 ax2.plot(x,y,color=colore, label=descrizione, linewidth = larghezza_riga)
             if scat_plot == 'err':
                 ax2.errorbar(x,y,xerr=x_error, yerr=y_error, label=descrizione, color= colore, linestyle = '')
+            if scat_plot == 'hist':
+                ax2.hist(x, bins = y, color = colore)
 
 #############################################
     def testo_su_figura(self, testo='testo', coordX = 0, coordY = 0, dimensione_testo = 15, colore = 'black', con_freccia = 'no', coordX_freccia = 1, coordY_freccia = 1):
@@ -270,15 +275,15 @@ class disegna:
         plt.savefig(titolo+'.png', dpi=300, transparent = True)
 
 #############################################
-    def porta_a_finestra(self, chiudi = 0):
+    def porta_a_finestra(self, chiudi = False):
         """
         show the plot into a canvas
         """
-        if chiudi == 0:
+        if chiudi:
+            plt.close()
+        else:
             fig.tight_layout()
             plt.show()
-        else:
-            plt.close()
 
 #############################################
     def aggiusta_la_finestra(self):

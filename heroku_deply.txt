@@ -1,0 +1,41 @@
+register on heroku
+install heroku CLI (devcenter.heroku.com/articles/heroku-cli)
+
+create a github repository (with the readme)
+copy the clone link
+in the folder where you want to put the code run the terminal
+git clone <link from github>
+enter in the folder that has been created by the git command
+
+in the new folder create a new file: Procfile
+###################
+web: sh setup.sh && streamlit run aj-stream-app.py
+###################
+
+in the new folder create a new file: setup.sh
+###################
+mkdir -p ~/.streamlit/
+
+echo "\
+[server]\n\
+headless = true\n\
+port = $PORT\n\
+enableCORS = false\n\
+\n\
+" > ~/.streamlit/config.toml
+###################
+
+creare file requirements.txt con le librerie usate dal programma, nella stessa cartella del programma
+(pip freeze > requirements.txt)
+
+bisogna commettere il programma, anch'esso nella cartella, su github
+git add *
+git status
+git commit -m "commento"
+git push
+
+(sempre in promp)
+heroku login
+heroku create <name-for-the-app-without-extension>
+heroku open
+git push heroku master

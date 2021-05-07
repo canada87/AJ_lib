@@ -182,6 +182,8 @@ class disegna:
                 ax2.plot(x,y,color=colore, label=descrizione, linewidth = larghezza_riga)
             if scat_plot == 'err':
                 ax2.errorbar(x,y,xerr=x_error, yerr=y_error, label=descrizione, color= colore, linestyle = '')
+            if scat_plot == 'hist':
+                ax2.hist(x, bins = y, color = colore)
 
 #############################################
     def testo_su_figura(self, testo='testo', coordX = 0, coordY = 0, dimensione_testo = 15, colore = 'black', con_freccia = 'no', coordX_freccia = 1, coordY_freccia = 1):

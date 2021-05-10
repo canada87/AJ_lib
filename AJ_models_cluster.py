@@ -128,7 +128,7 @@ class learning_cluster:
         plt.xlabel("Number of cluster")
         plt.show()
 
-    def order_cluster(cluster_field_name, target_field_name, df, ascending):
+    def order_cluster(self, cluster_field_name, target_field_name, df, ascending):
         '''
         function for ordering cluster numbers
         visto che kmean quando crea le classificazioni non e' ordinato secondo nessun criterio particolare

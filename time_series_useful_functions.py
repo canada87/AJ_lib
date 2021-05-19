@@ -9,6 +9,12 @@ def parser(x):
     return datetime.strptime('190'+x, '%Y-%m')
 series = read_csv('shampoo-sales.csv', header=0, index_col=0, parse_dates=True, squeeze=True, date_parser=parser)
 
+# set a column as datetime
+df['DOB'] = pd.to_datetime(df.DOB)
+
+#modify the aperence of the time
+df['DOB1'] = df['DOB'].dt.strftime('%m/%d/%Y')
+
 #read specific time period
 print(series['1959-01'])
 

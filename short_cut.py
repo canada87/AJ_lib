@@ -15,6 +15,7 @@ import numpy as np
 from sklearn.metrics import mean_absolute_error
 
 class work_functions:
+    
     def time_series_regression(self, start, X_train, Y_train, X_test, Y_test = [], net_type = 'normal',  verbose_dl = 0):
         learn = learning_reg()
         #####################################################

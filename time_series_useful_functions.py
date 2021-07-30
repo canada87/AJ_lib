@@ -9,6 +9,9 @@ def parser(x):
     return datetime.strptime('190'+x, '%Y-%m')
 series = read_csv('shampoo-sales.csv', header=0, index_col=0, parse_dates=True, squeeze=True, date_parser=parser)
 
+#converti una colonna in un datetime
+data['date'] = pd.to_datetime(data['date'], format='%Y %m')
+
 # set a column as datetime
 df['DOB'] = pd.to_datetime(df.DOB)
 

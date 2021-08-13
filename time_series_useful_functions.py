@@ -40,6 +40,9 @@ pyplot.show()
 series.plot(style='k.')
 pyplot.show()
 
+#inferisce la frequenza, che spesso viene persa per strada
+serie.index.freq = serie.index.inferred_freq
+
 #multy plot with grouped with a specific frequency
 groups = series.groupby(pd.Grouper(freq='A'))
 years = DataFrame()

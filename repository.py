@@ -40,6 +40,11 @@ data.set_index('date', inplace = True)
 
 data.rename(columns={'pop':'population'}, inplace=True)
 
+#riordina le colonne mettendo quelle selezionate davanti
+data = data[['anno', 'company', 'sub']+[c for c in data if c not in ['anno', 'company', 'sub']]]
+
+data_row['upload year'] = data_row['DOI'].str.split(".", expand = True)[3]
+
 cm = [plt.cm.rainbow(i) for i in np.linspace(0, 1.0, df_compare.T.shape[1] + 1)]
 
 plt.xticks(rotation=90)

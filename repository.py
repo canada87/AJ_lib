@@ -43,6 +43,10 @@ data.rename(columns={'pop':'population'}, inplace=True)
 #riordina le colonne mettendo quelle selezionate davanti
 data = data[['anno', 'company', 'sub']+[c for c in data if c not in ['anno', 'company', 'sub']]]
 
+#uso delle maschere
+mask = df_over_soglia_update['evento predetto'] > 0
+df_over_soglia_update.loc[mask,'evento predetto'] = 1
+
 data_row['upload year'] = data_row['DOI'].str.split(".", expand = True)[3]
 
 cm = [plt.cm.rainbow(i) for i in np.linspace(0, 1.0, df_compare.T.shape[1] + 1)]
